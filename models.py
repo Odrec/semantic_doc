@@ -17,19 +17,20 @@ from sklearn import linear_model
 from os.path import isfile
 
 import numpy as np
+np.__config__.show()
 import nltk
 nltk.download('wordnet')
 
 import data_preprocess as dp
 
 #Trains a LDA model using the bow corpus.
-def lda_model_bow(bow_corpus, dictionary, number_of_topics=20, save_path='saved_models/lda_bow'):
+def lda_model(corpus, dictionary, number_of_topics=20, save_path='saved_models/lda_bow'):
     if not isfile(save_path):
-        lda_model_bow = models.LdaMulticore(bow_corpus, num_topics=number_of_topics, id2word=dictionary, passes=2, workers=2)
-        lda_model_bow.save(save_path)
+        lda_model = models.LdaMulticore(corpus, num_topics=number_of_topics, id2word=dictionary, passes=2, workers=2)
+        lda_model.save(save_path)
     else: 
-        lda_model_bow = models.LdaMulticore.load(save_path)
-    return lda_model_bow
+        lda_model = models.LdaMulticore.load(save_path)
+    return lda_model
 
 #Trains a LDA model using the tf-idf corpus. TAKES TOO LONG
 def lda_model_tfidf(tfidf_corpus, dictionary, number_of_topics=20, save_path='saved_models/lda_tfidf'):
@@ -50,7 +51,7 @@ def get_topics_features(model, corpus, number_of_topics=20):
         doc_vecs.append(topic_vec)
     return doc_vecs
         
-def train_classifiers(train_vecs, train_labels):
+def train_classifiers(train_vecs, train_labels, typ='bow'):
     X = np.array(train_vecs)
     y = np.array(train_labels)
     
@@ -111,20 +112,20 @@ def train_classifiers(train_vecs, train_labels):
         
     
 #    print(f'Logistic Regression Val f1: {np.mean(cv_lr_f1):.3f} +- {np.std(cv_lr_f1):.3f}')
-    print(f'Logisitic Regression SGD Val f1: {np.mean(cv_lrsgd_f1):.3f} +- {np.std(cv_lrsgd_f1):.3f}')
-    print(f'SVM Huber Val f1: {np.mean(cv_svcsgd_f1):.3f} +- {np.std(cv_svcsgd_f1):.3f}')
-    print(f'Random Forest Val f1: {np.mean(cv_rf_f1):.3f} +- {np.std(cv_rf_f1):.3f}')
+    print(f'Logisitic Regression SGD Val f1: {np.mean(cv_lrsgd_f1):.3f} +- {np.std(cv_lrsgd_f1):.3f}',typ)
+    print(f'SVM Huber Val f1: {np.mean(cv_svcsgd_f1):.3f} +- {np.std(cv_svcsgd_f1):.3f}',typ)
+    print(f'Random Forest Val f1: {np.mean(cv_rf_f1):.3f} +- {np.std(cv_rf_f1):.3f}',typ)
     return [sgd, sgd_huber, rf]
 
 
-def test_classifiers(test_vecs, test_labels, classifiers):
+def test_classifiers(test_vecs, test_labels, classifiers, typ='bow'):
     X = np.array(test_vecs)
     y = np.array(test_labels)
     scores = []
     for j,c in enumerate(classifiers):
         y_pred = classifiers[j].predict(X)
         scores.append(f1_score(y, y_pred, average='weighted'))
-        print("Score for classifier %d: %f"%(j,scores[-1]))
+        print("Score for classifier %s %d: %f"%(typ,j,scores[-1]))
         
     return scores
         
@@ -181,6 +182,7 @@ def test_classifiers(test_vecs, test_labels, classifiers):
     
 if __name__ == "__main__":
     
+    print("Loading and splitting data for training and testing.\n")
     data = dp.load_data()
     training_data, testing_data = dp.get_split_data(data)
     files = list(data.keys())
@@ -201,15 +203,40 @@ if __name__ == "__main__":
             testing_labels.append(testing_data[files[i]]['label'])
             testing_content.append(testing_data[files[i]]['content'])
             
+    print("Finished loading and splitting data for training and testing.\n")
+
+    print("Preprocessing data for training.\n")
     #removing stop words and lemmatizing
     preprocessed_content_training = []
+    #Bigrams and trigrams
+    bigrams_content_training = []
+    trigrams_content_training = []
     for i,t in enumerate(training_content):
         words = []
         for word in training_content[i].split(' '):
             words.append(word)
         preprocessed_content_training.append(dp.preprocess(training_content[i]))
+    print("Finished preprocessing data for training.\n")
+
+    #preprocess for bigrams and trigrams
+    print("Getting bigram for training.\n")
+    bigrams_content_training, bigram_mod = dp.get_bigrams(preprocessed_content_training)
+    print("Finished getting bigram for training.\n")
+    print("Getting trigram for training.\n")
+    trigrams_content_training, trigram_mod = dp.get_trigrams(bigrams_content_training)
+    print("Finished getting trigram for training.\n")
         
-    bow_corpus_training, dictionary = dp.get_dictionary_bow(preprocessed_content_training)
+    print("Getting bow corpus and dictionary for training.\n")
+    bow_corpus_training, dictionary = dp.get_dictionary_corpus(preprocessed_content_training)
+    print("Finished getting bow corpus and dictionary for training.\n")
+    
+    #prepare data for bigram and trigram models
+    print("Getting bigram corpus and dictionary for training.\n")
+    bi_corpus_training, bi_dictionary = dp.get_dictionary_corpus(bigrams_content_training, save_path_dict='extracted_data/lda_dictionary_bigram', save_path_bcorp='extracted_data/lda_bigram_corpus')
+    print("Finished getting bigram corpus and dictionary for training.\n")
+    print("Getting trigram corpus and dictionary for training.\n")
+    tri_corpus_training, tri_dictionary = dp.get_dictionary_corpus(trigrams_content_training, save_path_dict='extracted_data/lda_dictionary_trigram', save_path_bcorp='extracted_data/lda_trigram_corpus')
+    print("Finished getting trigram corpus and dictionary for training.\n")
     
     l = list(set(training_labels + testing_labels))
     
@@ -221,35 +248,112 @@ if __name__ == "__main__":
 #    print(hdp.print_topics())
 
     #LDA with BOW
-    lda_model_bow = lda_model_bow(bow_corpus_training, dictionary)
+    print("Training bow LDA model.\n")
+    lda_model_bow = lda_model(bow_corpus_training, dictionary)
+    print("Finished training bow LDA model.\n")
+    #LDA with bigrams and trigrams
+    print("Training bigram LDA model.\n")
+    lda_model_bi = lda_model(bi_corpus_training, bi_dictionary, number_of_topics=20, save_path='saved_models/lda_bi')
+    print("Finished training bigram LDA model.\n")
+    print("Training trigram LDA model.\n")
+    lda_model_tri = lda_model(tri_corpus_training, tri_dictionary, number_of_topics=20, save_path='saved_models/lda_tri')
+    print("Finished training trigram LDA model.\n")
     
     #Transform topics into features
+    print("Getting training topic features for bow model.\n")
     train_vecs = get_topics_features(lda_model_bow, bow_corpus_training)
+    print("Finsihed getting training topic features for bow model.\n")
+    #Bigrams and trigrams
+    print("Getting training topic features for bigram model.\n")
+    train_vecs_bi = get_topics_features(lda_model_bi, bi_corpus_training)
+    print("Finsihed getting training topic features for bigram model.\n")
+    print("Getting training topic features for trigram model.\n")
+    train_vecs_tri = get_topics_features(lda_model_tri, tri_corpus_training)
+    print("Finsihed getting training topic features for trigram model.\n")
     
     #Train some classifiers
+    print("Training bow classifiers.\n")
     classifiers = train_classifiers(train_vecs, training_labels)
+    print("Finished training bow classifiers.\n")
+    #Bigrams and trigrams
+    print("Training bigram classifiers.\n")
+    classifiers_bi = train_classifiers(train_vecs_bi, training_labels, typ='bi')
+    print("Finished training bigram classifiers.\n")
+    print("Training trigram classifiers.\n")
+    classifiers_tri = train_classifiers(train_vecs_tri, training_labels, typ='tri')
+    print("Finished training trigram classifiers.\n")
     
+    print("Preprocessing data for testing.\n")
     #removing stop words and lemmatizing for testing data
     preprocessed_content_testing = []
+    #Bigrams and trigrams
+    bigrams_content_testing = []
+    trigrams_content_testing = []
     for i,t in enumerate(testing_content):
         words = []
         for word in testing_content[i].split(' '):
             words.append(word)
         preprocessed_content_testing.append(dp.preprocess(testing_content[i]))
+    print("Finished preprocessing data for testing.\n")
+        
+    #preprocess for bigrams and trigrams
+    print("Getting bigram for testing.\n")
+    bigrams_content_testing, __ = dp.get_bigrams(preprocessed_content_testing, bigram_mod, False)
+    print("Finished getting bigram for testing.\n")
+    print("Getting trigram for testing.\n")
+    trigrams_content_testing, __ = dp.get_trigrams(bigrams_content_testing, trigram_mod, False)
+    print("Finished getting trigram for testing.\n")
     
     #Get corpus for testing
-    bow_corpus_testing = dp.get_bow(preprocessed_content_testing)
+    print("Getting bow corpus for testing.\n")
+    bow_corpus_testing = dp.get_corpus(preprocessed_content_testing)
+    print("Finished getting bow corpus for testing.\n")
+    #Bigrams and trigrams
+    print("Getting bigram corpus for testing.\n")
+    bi_corpus_testing = dp.get_corpus(bigrams_content_testing)
+    print("Finished getting bigram corpus for testing.\n")
+    print("Getting trigram corpus for testing.\n")
+    tri_corpus_testing = dp.get_corpus(trigrams_content_testing)
+    print("Finished getting trigram corpus for testing.\n")
     
     #Transform topics into features for testing data
+    print("Getting testing topic features for bow model.\n")
     test_vecs = get_topics_features(lda_model_bow, bow_corpus_testing)
+    print("Finsihed getting testing topic features for bow model.\n")
+    #Bigrams and trigrams
+    print("Getting testing topic features for bigram model.\n")
+    test_vecs_bi = get_topics_features(lda_model_bi, bi_corpus_testing)
+    print("Finsihed getting testing topic features for bigram model.\n")
+    print("Getting testing topic features for trigram model.\n")
+    test_vecs_tri = get_topics_features(lda_model_tri, tri_corpus_testing)
+    print("Finsihed getting testing topic features for bigram model.\n")
     
     #Test some classifiers
-    scores = test_classifiers(test_vecs, testing_labels, classifiers)
+    print("Getting classifiers scores for bow model.\n")
+    scores = test_classifiers(test_vecs, testing_labels, classifiers, typ='bow')
+    print("Finshed getting classifiers scores for bow model.\n")
+    #Bigrams and trigrams
+    print("Getting classifiers scores for bigram model.\n")
+    scores_bi = test_classifiers(test_vecs_bi, testing_labels, classifiers_bi, typ='bi')
+    print("Finshed getting classifiers scores for bigram model.\n")
+    print("Getting classifiers scores for trigram model.\n")
+    scores_tri = test_classifiers(test_vecs_tri, testing_labels, classifiers_tri, typ='tri')
+    print("Finshed getting classifiers scores for trigram model.\n")
     
-    #Takes forever
-#    tfidf_corpus = get_tfidf(bow_corpus)
-#    #LDA with TF-IDF
-#    lda_model_tfidf = lda_model_tfidf(tfidf_corpus, dictionary, number_of_classes)
+#    print("Start tfidf model training and testing")
+#    #Takes forever
+#    tfidf_corpus_training = dp.get_tfidf(bow_corpus_training)
+##    #LDA with TF-IDF
+#    lda_model_tfidf = lda_model_tfidf(tfidf_corpus_training, dictionary)
+#    train_vecs_tfidf = get_topics_features(lda_model_tfidf, tfidf_corpus_training)
+#    classifiers_tfidf = train_classifiers(train_vecs_tfidf, training_labels)
+#    
+#    tfidf_corpus_testing = dp.get_tfidf(bow_corpus_testing)
+#    test_vecs_tfidf = get_topics_features(lda_model_tfidf, tfidf_corpus_testing)
+#    scores_tfidf = test_classifiers(test_vecs_tfidf, testing_labels, classifiers, typ='tfidf')
+#    print("Finished tfidf model training and testing")
+
+    
 #    scores_tfidf, topics_tfidf = match_topic_label(lda_model_tfidf, tfidf_corpus, training_labels, l, number_of_classes)
     
     #Custom evaluation. Might not make sense. Preferably to use combination of topics as features
