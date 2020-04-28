@@ -12,3 +12,25 @@ get\_data\_classes.py -- Extracts the content of the files and has functions to 
 data\_preprocess.py -- Has functions to preprocess the data for the models.
 
 models.py -- Code for the training and testing of different models.
+
+*Results:*
+
+Classifiers scores for LDA bow model.
+
+Score for classifier Logistic Regression SGD: 0.640555
+Score for classifier SVM Huber: 0.640555
+Score for classifier Random Forest: 0.640555
+
+Classifiers scores for LDA bigram model.
+
+Score for classifier Logistic Regression SGD: 0.640555
+Score for classifier SVM Huber: 0.000112
+Score for classifier Random Forest: 0.640555
+
+Classifiers scores for LDA trigram model.
+
+Score for classifier Logistic Regression SGD: 0.641057
+Score for classifier SVM Huber: 0.640555
+Score for classifier Random Forest: 0.000075
+
+*Note:* There was a problem using the default BLAS library with the numpy and scipy where the multicore functionality was not working properly. Changing to using the openBLAS library fixed the multicore issues. Also, openBLAS is fairly optimized in comparison to the default one so the models now run much faster. The TF-IDF based model is still too heavy for single laptop.
