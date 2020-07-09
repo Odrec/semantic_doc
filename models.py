@@ -7,11 +7,12 @@ Created on Mon Apr 13 13:29:59 2020
 """
 from gensim import models
 from nltk.stem.porter import *
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 #from sklearn.naive_bayes import GaussianNB, MultinomialNB
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
 from sklearn import linear_model
 
 from os.path import isfile
@@ -57,6 +58,8 @@ def train_classifiers(train_vecs, train_labels, typ='bow'):
     
     kf = KFold(5, shuffle=True, random_state=42)
     cv_rf_f1, cv_lrsgd_f1, cv_svcsgd_f1,  = [], [], []
+    cv_rf_ac, cv_lrsgd_ac, cv_svcsgd_ac,  = [], [], []
+    y_pred_sgd, y_pred_sgh, y_pred_rf, = [], [], []
     
     for train_ind, val_ind in kf.split(X, y):
         # Assign CV IDX
@@ -87,8 +90,9 @@ def train_classifiers(train_vecs, train_labels, typ='bow'):
             class_weight='balanced'
         ).fit(X_train_scale, y_train)
         
-        y_pred = sgd.predict(X_val_scale)
-        cv_lrsgd_f1.append(f1_score(y_val, y_pred, average='weighted'))
+        y_pred_sgd.append(sgd.predict(X_val_scale))
+        cv_lrsgd_f1.append(f1_score(y_val, y_pred_sgd[-1], average='macro'))
+        cv_lrsgd_ac.append(accuracy_score(y_val, y_pred_sgd[-1]))
         
         # SGD Modified Huber
         sgd_huber = linear_model.SGDClassifier(
@@ -99,22 +103,61 @@ def train_classifiers(train_vecs, train_labels, typ='bow'):
             class_weight='balanced'
         ).fit(X_train_scale, y_train)
         
-        y_pred = sgd_huber.predict(X_val_scale)
-        cv_svcsgd_f1.append(f1_score(y_val, y_pred, average='weighted'))
+        y_pred_sgh.append(sgd_huber.predict(X_val_scale))
+        cv_svcsgd_f1.append(f1_score(y_val, y_pred_sgh[-1], average='macro'))
+        cv_svcsgd_ac.append(accuracy_score(y_val, y_pred_sgh[-1]))
         
         # Random Forest
         rf = RandomForestClassifier(
             class_weight='balanced'
         ).fit(X_train_scale, y_train)
         
-        y_pred = rf.predict(X_val_scale)
-        cv_rf_f1.append(f1_score(y_val, y_pred, average='weighted'))
+        y_pred_rf.append(rf.predict(X_val_scale))
+        cv_rf_f1.append(f1_score(y_val, y_pred_rf[-1], average='macro'))
+        cv_rf_ac.append(accuracy_score(y_val, y_pred_rf[-1]))
         
+    y_pred_sgd_final = [item for sublist in y_pred_sgd for item in sublist]
+    y_pred_sgh_final = [item for sublist in y_pred_sgh for item in sublist]
+    y_pred_rf_final = [item for sublist in y_pred_rf for item in sublist]
     
 #    print(f'Logistic Regression Val f1: {np.mean(cv_lr_f1):.3f} +- {np.std(cv_lr_f1):.3f}')
-    print(f'Logisitic Regression SGD Val f1: {np.mean(cv_lrsgd_f1):.3f} +- {np.std(cv_lrsgd_f1):.3f}',typ)
+    print(f'SGD Val f1: {np.mean(cv_lrsgd_f1):.3f} +- {np.std(cv_lrsgd_f1):.3f}',typ)
     print(f'SVM Huber Val f1: {np.mean(cv_svcsgd_f1):.3f} +- {np.std(cv_svcsgd_f1):.3f}',typ)
     print(f'Random Forest Val f1: {np.mean(cv_rf_f1):.3f} +- {np.std(cv_rf_f1):.3f}',typ)
+    print("\n")
+    print(f'SGD Val acc: {np.mean(cv_lrsgd_ac):.3f} +- {np.std(cv_lrsgd_ac):.3f}',typ)
+    print(f'SVM Huber Val acc: {np.mean(cv_svcsgd_ac):.3f} +- {np.std(cv_svcsgd_ac):.3f}',typ)
+    print(f'Random Forest Val acc: {np.mean(cv_rf_ac):.3f} +- {np.std(cv_rf_ac):.3f}',typ)
+    print("\n")
+    print("Precision (micro) SGD: %f" % precision_score(y, y_pred_sgd_final, average='micro'),typ)
+    print("Recall (micro) SGD:    %f" % recall_score(y, y_pred_sgd_final, average='micro'),typ)
+    print("F1 score (micro) SGD:  %f" % f1_score(y, y_pred_sgd_final, average='micro'),typ, end='\n\n')
+    print("Precision (macro) SGD: %f" % precision_score(y, y_pred_sgd_final, average='macro'),typ)
+    print("Recall (macro) SGD:    %f" % recall_score(y, y_pred_sgd_final, average='macro'),typ)
+    print("F1 score (macro) SGD:  %f" % f1_score(y, y_pred_sgd_final, average='macro'),typ, end='\n\n')
+    print("Precision (weighted) SGD: %f" % precision_score(y, y_pred_sgd_final, average='weighted'),typ)
+    print("Recall (weighted) SGD:    %f" % recall_score(y, y_pred_sgd_final, average='weighted'),typ)
+    print("F1 score (weighted) SGD:  %f" % f1_score(y, y_pred_sgd_final, average='weighted'),typ)
+    print("\n")
+    print("Precision (micro) SVM Huber: %f" % precision_score(y, y_pred_sgh_final, average='micro'),typ)
+    print("Recall (micro) SVM Huber:    %f" % recall_score(y, y_pred_sgh_final, average='micro'),typ)
+    print("F1 score (micro) SVM Huber:  %f" % f1_score(y, y_pred_sgh_final, average='micro'),typ, end='\n\n')
+    print("Precision (macro) SVM Huber: %f" % precision_score(y, y_pred_sgh_final, average='macro'),typ)
+    print("Recall (macro) SVM Huber:    %f" % recall_score(y, y_pred_sgh_final, average='macro'),typ)
+    print("F1 score (macro) SVM Huber:  %f" % f1_score(y, y_pred_sgh_final, average='macro'),typ, end='\n\n')
+    print("Precision (weighted) SVM Huber: %f" % precision_score(y, y_pred_sgh_final, average='weighted'),typ)
+    print("Recall (weighted) SVM Huber:    %f" % recall_score(y, y_pred_sgh_final, average='weighted'),typ)
+    print("F1 score (weighted) SVM Huber:  %f" % f1_score(y, y_pred_sgh_final, average='weighted'),typ)
+    print("\n")
+    print("Precision (micro) RF: %f" % precision_score(y, y_pred_rf_final, average='micro'),typ)
+    print("Recall (micro) RF:    %f" % recall_score(y, y_pred_rf_final, average='micro'),typ)
+    print("F1 score (micro) RF:  %f" % f1_score(y, y_pred_rf_final, average='micro'),typ, end='\n\n')
+    print("Precision (macro) RF: %f" % precision_score(y, y_pred_rf_final, average='macro'),typ)
+    print("Recall (macro) RF:    %f" % recall_score(y, y_pred_rf_final, average='macro'),typ)
+    print("F1 score (macro) RF:  %f" % f1_score(y, y_pred_rf_final, average='macro'),typ, end='\n\n')
+    print("Precision (weighted) RF: %f" % precision_score(y, y_pred_rf_final, average='weighted'),typ)
+    print("Recall (weighted) RF:    %f" % recall_score(y, y_pred_rf_final, average='weighted'),typ)
+    print("F1 score (weighted) RF:  %f" % f1_score(y, y_pred_rf_final, average='weighted'),typ)
     return [sgd, sgd_huber, rf]
 
 
@@ -229,6 +272,10 @@ if __name__ == "__main__":
     print("Getting bow corpus and dictionary for training.\n")
     bow_corpus_training, dictionary = dp.get_dictionary_corpus(preprocessed_content_training)
     print("Finished getting bow corpus and dictionary for training.\n")
+    
+#    vectorizer = CountVectorizer()
+#    X = vectorizer.fit_transform(bow_corpus_training)
+#    print(X.toarray())
     
     #prepare data for bigram and trigram models
     print("Getting bigram corpus and dictionary for training.\n")
